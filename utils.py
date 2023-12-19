@@ -1,3 +1,4 @@
+import fnmatch
 from typing import Dict, List, Optional, Union, Tuple, BinaryIO
 import os
 import sys
