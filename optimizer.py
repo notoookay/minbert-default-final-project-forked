@@ -59,7 +59,30 @@ class AdamW(Optimizer):
                 #    (incorporating the learning rate again).
 
                 ### TODO
-                raise NotImplementedError
+                # From respondent: order of implementation above is different
+                # from Pytorch document of `AdamW`
+
+                betas = group["betas"]
+                if "m_t" not in state:
+                    # initialization
+                    state["m_t"] = 0
+                state["m_t"] = betas[0] * state["m_t"] + (1 - betas[0]) * grad
+                if "v_t" not in state:
+                    # initialization
+                    state["v_t"] = 0
+                state["v_t"] = betas[1] * state["v_t"] + (1 - betas[1]) * torch.pow(grad, 2)
+
+                if "t" not in state:
+                    # initialization
+                    state["t"] = 0
+                state["t"] = state["t"] + 1
+
+                p.data = p.data - alpha * group["weight_decay"] * p.data
+                if group["correct_bias"]:
+                    alpha = alpha * (math.sqrt(1 - math.pow(betas[1], state["t"]))) \
+                        / (1 - math.pow(betas[0], state["t"]))
+
+                p.data = p.data - alpha * state["m_t"] / (torch.sqrt(state["v_t"]) + group["eps"])
 
 
         return loss
