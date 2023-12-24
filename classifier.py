@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import csv
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
@@ -45,7 +46,11 @@ class BertSentimentClassifier(torch.nn.Module):
                 param.requires_grad = True
 
         ### TODO
-        raise NotImplementedError
+
+        # Add other layers, during pretrain stage, I think those layers should
+        # be the only layers changed parameters.
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.proj = nn.Linear(config.hidden_size, self.num_labels) # 5 logits for each class
 
 
     def forward(self, input_ids, attention_mask):
@@ -54,8 +59,12 @@ class BertSentimentClassifier(torch.nn.Module):
         # HINT: you should consider what is the appropriate output to return given that
         # the training loop currently uses F.cross_entropy as the loss function.
         ### TODO
-        raise NotImplementedError
 
+        hidden_dict = self.bert(input_ids, attention_mask)
+        hidden_state = self.dropout(hidden_dict["pooler_output"])
+        logits = self.proj(hidden_state)
+
+        return logits
 
 
 class SentimentDataset(Dataset):
