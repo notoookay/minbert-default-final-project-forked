@@ -15,7 +15,7 @@ from datasets import SentenceClassificationDataset, SentencePairDataset, \
 
 from evaluation import model_eval_sst, test_model_multitask
 
-TQDM_DISABLE = True
+TQDM_DISABLE = False
 
 
 # fix the random seed
@@ -64,7 +64,6 @@ class MultitaskBERT(nn.Module):
 
         # Similarity
         self.cos_simi = nn.CosineSimilarity(dim=-1)
-
 
     def forward(self, input_ids, attention_mask):
         'Takes a batch of sentences and produces embeddings for them.'
@@ -167,8 +166,17 @@ def train_multitask(args):
     sst_dev_data, num_labels, para_dev_data, sts_dev_data = load_multitask_data(
         args.sst_dev, args.para_dev, args.sts_dev, split='train')
 
-    sst_train_data = SentenceClassificationDataset(sst_train_data, args)
-    sst_dev_data = SentenceClassificationDataset(sst_dev_data, args)
+    # SST part training code should be fine
+    # sst_train_data = SentenceClassificationDataset(sst_train_data, args)
+    # sst_dev_data = SentenceClassificationDataset(sst_dev_data, args)
+
+    # TODO: test this part
+    para_train_data = SentencePairDataset(para_train_data, args)
+    para_dev_data = SentencePairDataset(para_dev_data, args)
+
+    # TODO: test this part
+    # sts_train_data = SentencePairDataset(sts_train_data, args)
+    # sts_dev_data = SentencePairDataset(sts_dev_data, args)
 
     sst_train_dataloader = DataLoader(sst_train_data, shuffle=True,
                                       batch_size=args.batch_size,
@@ -176,6 +184,20 @@ def train_multitask(args):
     sst_dev_dataloader = DataLoader(sst_dev_data, shuffle=False,
                                     batch_size=args.batch_size,
                                     collate_fn=sst_dev_data.collate_fn)
+
+    para_train_dataloader = DataLoader(para_train_data, shuffle=True,
+                                       batch_size=args.batch_size,
+                                       collate_fn=para_train_data.collate_fn)
+    para_dev_dataloader = DataLoader(para_dev_data, shuffle=False,
+                                     batch_size=args.batch_size,
+                                     collate_fn=para_dev_data.collate_fn)
+
+    sts_train_dataloader = DataLoader(sts_train_data, shuffle=True,
+                                      batch_size=args.batch_size,
+                                      collate_fn=sts_train_data.collate_fn)
+    sts_dev_dataloader = DataLoader(sts_dev_data, shuffle=False,
+                                    batch_size=args.batch_size,
+                                    collate_fn=sts_dev_data.collate_fn)
 
     # Init model
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
@@ -193,12 +215,14 @@ def train_multitask(args):
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
 
+    model.train()
+
+    # 3 train procedures are used
     # Run for the specified number of epochs
     for epoch in range(args.epochs):
-        model.train()
         train_loss = 0
         num_batches = 0
-        for batch in tqdm(sst_train_dataloader, desc=f'train-{epoch}',
+        for batch in tqdm(sst_train_dataloader, desc=f'sst-train-{epoch}',
                           disable=TQDM_DISABLE):
             b_ids, b_mask, b_labels = (batch['token_ids'],
                                        batch['attention_mask'], batch['labels'])
@@ -224,6 +248,55 @@ def train_multitask(args):
         train_acc, train_f1, *_ = model_eval_sst(sst_train_dataloader, model,
                                                  device)
         dev_acc, dev_f1, *_ = model_eval_sst(sst_dev_dataloader, model, device)
+
+        if dev_acc > best_dev_acc:
+            best_dev_acc = dev_acc
+            save_model(model, optimizer, args, config, args.filepath)
+
+        print(
+            f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+
+    # This training procedure is not tested
+    for epoch in range(args.epoch):
+        train_loss = 0
+        num_batches = 0
+
+        for batch in tqdm(para_train_dataloader, desc=f'para-train-{epoch}',
+                          disable=TQDM_DISABLE):
+            b_ids_1, b_type_1, b_mask_1 = (batch["token_ids_1"],
+                                           batch["token_type_ids_1"],
+                                           batch["attention_mask_1"])
+            b_ids_2, b_type_2, b_mask_2 = (batch["token_ids_2"],
+                                           batch["token_type_ids_2"],
+                                           batch["attention_mask_2"])
+            b_labels = batch["labels"]
+
+            b_ids_1.to(device)
+            b_mask_1.to(device)
+            b_ids_2.to(device)
+            b_mask_2.to(device)
+            b_labels.to(device)
+
+            optimizer.zero_grad()
+
+            # token_type_ids still aren't used yet
+            logits = model.predict_paraphrase(b_ids_1, b_mask_1,
+                                              b_ids_2, b_mask_2)
+            print(b_labels.size())
+            loss = F.cross_entropy(logits, b_labels.view(-1),
+                                   reduction="sum") / args.batch_size
+
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+            num_batches += 1
+
+        train_loss = train_loss / num_batches
+
+        train_acc, train_f1, *_ = model_eval_sst(para_train_dataloader, model,
+                                                 device)
+        dev_acc, dev_f1, *_ = model_eval_sst(para_dev_dataloader, model, device)
 
         if dev_acc > best_dev_acc:
             best_dev_acc = dev_acc

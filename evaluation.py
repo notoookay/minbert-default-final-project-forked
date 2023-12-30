@@ -26,7 +26,7 @@ from datasets import load_multitask_data, load_multitask_test_data, \
     SentencePairDataset, SentencePairTestDataset
 
 
-TQDM_DISABLE = True
+TQDM_DISABLE = False
 
 # Evaluate a multitask model for accuracy.on SST only.
 def model_eval_sst(dataloader, model, device):
@@ -44,6 +44,7 @@ def model_eval_sst(dataloader, model, device):
 
         logits = model.predict_sentiment(b_ids, b_mask)
         logits = logits.detach().cpu().numpy()
+        # logits: (batch_size, num_labels)
         preds = np.argmax(logits, axis=1).flatten()
 
         b_labels = b_labels.flatten()
@@ -56,6 +57,42 @@ def model_eval_sst(dataloader, model, device):
     acc = accuracy_score(y_true, y_pred)
 
     return acc, f1, y_pred, y_true, sents, sent_ids
+
+def model_eval_para(data_loader, model, device):
+    model.eval()
+    y_true = []
+    y_pred = []
+    sent_ids = []
+    for step, batch in enumerate(tqdm(data_loader, desc=f"eval", disable=TQDM_DISABLE)):
+        b_ids_1, b_type_1, b_mask_1 = (batch["token_ids_1"],
+                                       batch["token_type_ids_1"],
+                                       batch["attention_mask_1"])
+        b_ids_2, b_type_2, b_mask_2 = (batch["token_ids_2"],
+                                       batch["token_type_ids_2"],
+                                       batch["attention_mask_2"])
+        b_labels = batch["labels"]
+        sent_id = batch["sent_ids"]
+
+        b_ids_1.to(device)
+        b_mask_1.to(device)
+        b_ids_2.to(device)
+        b_mask_2.to(device)
+
+        logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+        logits.detach().cpu().numpy()
+
+        threshold = 0.8
+        preds = np.where(logits > threshold, 1, 0)
+
+        b_labels = b_labels.flatten()
+        y_true.extend(b_labels)
+        y_pred.extend(preds)
+        sent_ids.extend(sent_id)
+
+    f1 = f1_score(y_true, y_pred, average="macro")
+    acc = accuracy_score(y_true, y_pred)
+
+    return acc, f1, y_pred, y_true, sent_ids
 
 # Perform model evaluation in terms by averaging accuracies across tasks.
 def model_eval_multitask(sentiment_dataloader,
