@@ -9,7 +9,10 @@ import numpy as np
 from torch import nn
 
 from bert import BertModel
+from multitask_classifier import save_model
 
+
+# For reproducible
 def seed_everything(seed=11711):
     random.seed(seed)
     np.random.seed(seed)
@@ -18,9 +21,6 @@ def seed_everything(seed=11711):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-
-
-BERT_HIDDEN_SIZE = 768
 
 
 class BertForQuestionAnswering(nn.Module):
@@ -53,6 +53,7 @@ class BertForQuestionAnswering(nn.Module):
         logits = self.softmax(hidden_state)
 
         return logits
+
 
 def main():
     raise NotImplementedError

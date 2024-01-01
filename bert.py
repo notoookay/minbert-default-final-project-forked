@@ -165,7 +165,7 @@ class BertModel(BertPreTrainedModel):
 
     self.init_weights()
 
-  def embed(self, input_ids):
+  def embed(self, input_ids, token_type_ids=None):  # set None for old code
     # input_ids: (bs, seq_len)
     input_shape = input_ids.size()
     seq_length = input_shape[1]
@@ -180,9 +180,12 @@ class BertModel(BertPreTrainedModel):
     pos_embeds = self.pos_embedding(pos_ids)
 
 
-    # Get token type ids, since we are not consider token type, just a placeholder.
-    tk_type_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
-    tk_type_embeds = self.tk_type_embedding(tk_type_ids)
+    # Get token type ids, since we consider token type for QA
+    if token_type_ids is None:
+      tk_type_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
+      tk_type_embeds = self.tk_type_embedding(tk_type_ids)
+    else:
+      tk_type_embeds = self.tk_type_embedding(token_type_ids)
 
     # Add three embeddings together; then apply embed_layer_norm and dropout and return.
     embeddings = self.embed_dropout(

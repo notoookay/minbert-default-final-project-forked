@@ -338,13 +338,61 @@ class SQuADDataset(Dataset):
     def __getitem__(self, idx):
         return self.dataset[idx]
 
+    def pad_data(self, data):
+        # bert need input like [["question", "context"]]
+        qcs = []  # abbreviation for question_context_s
+        answers = []
+        ids = []
+        is_impossible = None
+        # check if it's squad v2
+        if "is_impossible" in data[0]["paragraphs"][0]["qas"][0]:
+            is_impossible = []
+        for d in data:
+            for p in d["paragraphs"]:
+                context = (d["title"] + p["context"])
+                # qa["answers"]: list(dict(answer_start, text), length=3)
+                answers.extend([qa["answers"] for qa in p["qas"]])
+                qcs.extend([[qa["question"], context] for qa in p["qas"]])
+                ids.extend([qa["id"] for qa in p["qas"]])
+                if is_impossible is not None:
+                    is_impossible.extend(qa["is_impossible"] for qa in p["qas"])
 
-# TODO: This may need improvement.
-def load_squad_v1(filename):
+        encoding = self.tokenizer(qcs, return_tensors="pt", padding=True,
+                                  truncation=True)
+        input_ids = torch.LongTensor(encoding["input_ids"])
+        attention_mask = torch.LongTensor(encoding["attention_mask"])
+        token_type_ids = torch.LongTensor(encoding["token_type_ids"])
+
+        return (input_ids, token_type_ids, attention_mask, answers,
+                ids, is_impossible)
+
+    def collate_fn(self, data):
+        (input_ids, token_type_ids, attention_mask, answers,
+         ids, is_impossible) = self.pad_data(data)
+
+        batched_data = {
+            "input_ids": input_ids,
+            "token_type_ids": token_type_ids,
+            "attention_mask": attention_mask,
+            "answers": answers,
+            "ids": ids
+        }
+        if is_impossible:
+            batched_data["is_impossible"] = is_impossible
+
+        return batched_data
+
+
+def load_squad(filename):
+    """
+    Load SQuAD dataset, squad v2 basically sames as squad v1.1 but with
+    an `is_impossible` tag if question answerable
+    """
     if not os.path.exists(filename):
         raise FileNotFoundError
 
     with open(filename, "r") as f:
-        data = json.load(f)
+        data = json.load(f)  # dict("data", "version")
 
-    return data
+    # list(dict("title", list(dict("context", list(dict("answers", "question", "id"))))))
+    return data["data"]
