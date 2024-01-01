@@ -8,6 +8,8 @@ to train your model.
 '''
 
 import csv
+import json
+import os.path
 
 import torch
 from torch.utils.data import Dataset
@@ -318,3 +320,31 @@ def load_multitask_data(sentiment_filename, paraphrase_filename,
         f"Loaded {len(similarity_data)} {split} examples from {similarity_filename}")
 
     return sentiment_data, num_labels, paraphrase_data, similarity_data
+
+
+# Question answering part starts from here
+
+class SQuADDataset(Dataset):
+
+    def __init__(self, dataset, args):
+        super().__init__()
+        self.dataset = dataset
+        self.args = args
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        return self.dataset[idx]
+
+
+# TODO: This may need improvement.
+def load_squad_v1(filename):
+    if not os.path.exists(filename):
+        raise FileNotFoundError
+
+    with open(filename, "r") as f:
+        data = json.load(f)
+
+    return data
