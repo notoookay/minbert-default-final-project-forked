@@ -1,6 +1,6 @@
-# Forked repo which contain some complete code
+# Forked repo which contains some complete code
 
-## Update
+## Update (January 1st, 2024)
 
 The Basic classifier task model has been completed, but not train or test yet,
 the main task focused on is question answering part with SQuAD dataset.

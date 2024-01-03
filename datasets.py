@@ -326,10 +326,9 @@ def load_multitask_data(sentiment_filename, paraphrase_filename,
 
 class SQuADDataset(Dataset):
 
-    def __init__(self, dataset, args):
+    def __init__(self, dataset):  # no args argument here, this should be fine
         super().__init__()
         self.dataset = dataset
-        self.args = args
         self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
     def __len__(self):
