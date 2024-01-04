@@ -322,64 +322,19 @@ def load_multitask_data(sentiment_filename, paraphrase_filename,
     return sentiment_data, num_labels, paraphrase_data, similarity_data
 
 
-# Question answering part starts from here
+# Question Answering part starts from here
 
 class SQuADDataset(Dataset):
 
     def __init__(self, dataset):  # no args argument here, this should be fine
         super().__init__()
         self.dataset = dataset
-        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
         return self.dataset[idx]
-
-    def pad_data(self, data):
-        # bert need input like [["question", "context"]]
-        qcs = []  # abbreviation for question_context_s
-        answers = []
-        ids = []
-        is_impossible = None
-        # check if it's squad v2
-        if "is_impossible" in data[0]["paragraphs"][0]["qas"][0]:
-            is_impossible = []
-        for d in data:
-            for p in d["paragraphs"]:
-                context = (d["title"] + p["context"])
-                # qa["answers"]: list(dict(answer_start, text), length=3)
-                answers.extend([qa["answers"] for qa in p["qas"]])
-                qcs.extend([[qa["question"], context] for qa in p["qas"]])
-                ids.extend([qa["id"] for qa in p["qas"]])
-                if is_impossible is not None:
-                    is_impossible.extend(qa["is_impossible"] for qa in p["qas"])
-
-        encoding = self.tokenizer(qcs, return_tensors="pt", padding=True,
-                                  truncation=True)
-        input_ids = torch.LongTensor(encoding["input_ids"])
-        attention_mask = torch.LongTensor(encoding["attention_mask"])
-        token_type_ids = torch.LongTensor(encoding["token_type_ids"])
-
-        return (input_ids, token_type_ids, attention_mask, answers,
-                ids, is_impossible)
-
-    def collate_fn(self, data):
-        (input_ids, token_type_ids, attention_mask, answers,
-         ids, is_impossible) = self.pad_data(data)
-
-        batched_data = {
-            "input_ids": input_ids,
-            "token_type_ids": token_type_ids,
-            "attention_mask": attention_mask,
-            "answers": answers,
-            "ids": ids
-        }
-        if is_impossible:
-            batched_data["is_impossible"] = is_impossible
-
-        return batched_data
 
 
 def load_squad(filename):
@@ -393,5 +348,23 @@ def load_squad(filename):
     with open(filename, "r") as f:
         data = json.load(f)  # dict("data", "version")
 
-    # list(dict("title", list(dict("context", list(dict("answers", "question", "id"))))))
-    return data["data"]
+    data = data["data"]
+
+    returned_data = []
+    for d in data:
+        title = d["title"]
+        paragraphs = d["paragraphs"]
+        for p in paragraphs:
+            context = p["context"]
+            for qa in p["qas"]:
+                id = qa["id"]
+                question = qa["question"]
+                answers = qa["answers"]
+                item = {"id": id, "title": title, "context": context,
+                        "question": question, "answers": answers}
+                if "is_impossible" in qa:
+                    item["is_impossible"] = qa["is_impossible"]
+                returned_data.append(item)
+
+    # format of data sames as huggingface `datasets`
+    return returned_data

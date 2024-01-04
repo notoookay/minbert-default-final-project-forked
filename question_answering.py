@@ -16,6 +16,7 @@ from bert import BertModel
 from multitask_classifier import save_model
 from datasets import load_squad, SQuADDataset
 from optimizer import AdamW
+from tokenizer import BertTokenizer
 
 TQDM_DISABLE = True
 
@@ -46,8 +47,9 @@ class BertForQuestionAnswering(nn.Module):
 
         # head layers
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        # project hidden_state to (start_pos, end_pos)
-        self.pos_proj = nn.Linear(config.hidden_size, 2)
+        # project hidden_state to (start_pos, end_pos),
+        # `num_label` should be 2 in QA
+        self.pos_proj = nn.Linear(config.hidden_size, config.num_label)
         # get logits
         self.softmax = nn.Softmax(dim=-2)
 
@@ -57,7 +59,7 @@ class BertForQuestionAnswering(nn.Module):
         # Do not need pooler output ([CLS])
         hidden_state = outputs["last_hidden_state"]
         hidden_state = self.pos_proj(self.dropout(hidden_state))
-        logits = self.softmax(hidden_state)  # (batch_size, seq_len, hidden_size)
+        logits = self.softmax(hidden_state)  # (batch_size, seq_len, num_label)
 
         return logits
 
@@ -73,6 +75,8 @@ def train(args):
                               shuffle=True, batch_size=args.batch_size)
     dev_loader = DataLoader(dev_dataset, collate_fn=dev_dataset.collate_fn,
                             shuffle=True, batch_size=args.batch_size)
+
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
               'hidden_size': 768,
@@ -95,19 +99,41 @@ def train(args):
         num_batches = 0
         for batch in tqdm(train_loader, desc=f'train-{epoch} / {args.epochs}',
                           disable=TQDM_DISABLE):
-            (input_ids, token_type_ids, attention_mask, answers,
-             ids) = (batch["input_ids"], batch["token_type_ids"],
-                     batch["attention_mask"], batch["answers"], batch["ids"])
+            # answers is a list, in train data, len = 1, in val data, len > 1,
+            # so CHECK its length before using validation data
+            question, context, answers = (batch["question"], batch["context"],
+                                          batch["answers"])
+
+            tokens = tokenizer([[q, c] for q, c in zip(question, context)],
+                               return_tensors="pt",
+                               padding=True,
+                               truncation=True)
+            input_ids = torch.LongTensor(tokens["input_ids"])
+            token_type_ids = torch.LongTensor(tokens["token_type_ids"])
+            attention_mask = torch.LongTensor(tokens["attention_mask"])
+
+            # As the way Bert deals with a pair of sequences:
+            # "[CLS] question [SEP] context [SEP]", `answer_start` from original
+            # data we can't directly use, we should add offset of question
+
+            # TODO: complete answer_start correction
+
+            answer_text = answers[0]["text"]
+            end_pos = start_pos + len(answer_text)
 
             if args.squad_v2:  # True if SQuAD v2
                 is_impossible = batch["is_impossible"]
-            # TODO: deal with questions impossible to answer
+            # TODO: deal with questions impossible to answer after finish
+            #  squad v1.1, due to the `is_impossible` flag, we don't need to
+            #  check start and end if they are in span
 
             optimizer.zero_grad()
-            logits = model(input_ids, attention_mask)
+            start_logit, end_logit = model(input_ids, attention_mask)
             # TODO: start logits and end logits need to calculate separately
-            loss = F.cross_entropy(logits, answers[""],
+            start_loss = F.cross_entropy(start_logit, start_pos,
                                    reduction='sum') / args.batch_size
+            end_loss = F.cross_entropy(end_logit, end_pos,
+                                         reduction='sum') / args.batch_size
 
             loss.backward()
             optimizer.step()
