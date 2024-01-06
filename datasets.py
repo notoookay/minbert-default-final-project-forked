@@ -336,6 +336,44 @@ class SQuADDataset(Dataset):
     def __getitem__(self, idx):
         return self.dataset[idx]
 
+    def pad_answer(self, data):
+        """
+        Turn the format: list(dict(answer_start, text))
+        to: dict(list(answer_start), list(text)), it's convenient
+        """
+        for d in data:
+            answer_start = []
+            text = []
+            no_answer = False
+            for answer in d["answers"]:
+                if len(answer) == 0:
+                    no_answer = True
+                    break
+                answer_start.append(answer["answer_start"])
+                text.append(answer["text"])
+            if not no_answer:
+                d["answers"] = {"answer_start": answer_start, "text": text}
+
+        return data
+
+    def collate_fn(self, data):
+        # data = self.pad_answer(data)
+        question = [d["question"] for d in data]
+        context = [d["context"] for d in data]
+        id = [d["id"] for d in data]
+        title = [d["title"] for d in data]
+        answers = [d["answers"] for d in data]
+
+        return_data = {
+            "id": id,
+            "question": question,
+            "context": context,
+            "title": title,
+            "answers": answers
+        }
+
+        return return_data
+
 
 def load_squad(filename):
     """
