@@ -4,6 +4,7 @@ This file will use SQUAD v1.1 and SQUAD v2 to train bert model for question answ
 
 import random
 from types import SimpleNamespace
+import argparse
 
 import torch
 import numpy as np
@@ -20,7 +21,7 @@ from transformers import AutoTokenizer
 
 # here I use transformers tokenizer for `offset_mapping` feature
 
-TQDM_DISABLE = True
+TQDM_DISABLE = False
 
 
 # For reproducible
@@ -64,18 +65,17 @@ class BertForQuestionAnswering(nn.Module):
         hidden_state = self.pos_proj(self.dropout(hidden_state))
         logits = self.softmax(hidden_state)  # (batch_size, seq_len, num_label)
 
-        return logits
+        return logits[:, :, 0], logits[:, :, 1]
 
 
-def pad_answers(token_type_ids, answers, input_ids, offset_mappings):
-    answer_spans = []
-    for token_type_id, answer, input_id, offset_mapping in \
-            zip(token_type_ids, answers, input_ids, offset_mappings):
+def pad_answers(token_type_ids, answer_batch, input_ids, offset_mappings):
+    answer_spans = []  # [batch_size, list([start, end])]
+    for token_type_id, answers, input_id, offset_mapping in \
+            zip(token_type_ids, answer_batch, input_ids, offset_mappings):
         # This variable should have the same length
         # Although we can use `is_impossible` tag, but I don't want to use it.
-        if len(answer) == 0:
-            start_pos = 0
-            end_pos = 0
+        if len(answers) == 0:  # answers is dict
+            answer_spans.append([[0, 0]])
             continue
         # deal with the answerable question below
         l = len(input_id)
@@ -88,29 +88,27 @@ def pad_answers(token_type_ids, answers, input_ids, offset_mappings):
             context_end -= 1
 
         answer_span = []
-        for a in answer:
-            span = []
-            for start_pos, text in a["answer_start"], a["text"]:
-                token_start = context_start
-                token_end = context_end
-                end_pos = start_pos + len(text)
-                if offset_mapping[token_start][0] > start_pos or \
-                        offset_mapping[token_end][1] < end_pos:
-                    # exceed the context span
-                    start_pos = 0
-                    end_pos = 0
-                else:
-                    while token_start < l and offset_mapping[token_start][0] <= start_pos:
-                        token_start += 1
+        for start_pos, text in zip(answers["answer_start"], answers["text"]):
+            token_start = context_start
+            token_end = context_end
+            end_pos = start_pos + len(text)
+            if offset_mapping[token_start][0] > start_pos or \
+                    offset_mapping[token_end][1] < end_pos:
+                answer_span.append([0, 0])
+            else:
+                while token_start < l and \
+                        offset_mapping[token_start][0] <= start_pos:
+                    token_start += 1
+                token_start -= 1
+                while token_end >= context_start and \
+                        offset_mapping[token_end][1] >= end_pos:
                     token_start -= 1
-                    while token_end >= token_start and offset_mapping[token_end][1] >= end_pos:
-                        token_end -= 1
-                    token_end += 1
-                span.append(([start_pos, end_pos]))
-            answer_span.append(span)
+                token_start += 1
+                answer_span.append([token_start, token_end])
         answer_spans.append(answer_span)
 
-    return answer_spans
+    # list([start_pos, end_pos]), convert to tensor for loss calculation
+    return torch.LongTensor(answer_spans)
 
 
 def train(args):
@@ -132,6 +130,7 @@ def train(args):
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
               'hidden_size': 768,
               'data_dir': '.',
+              "num_label": 2,
               'option': args.option}
     config = SimpleNamespace(**config)
 
@@ -159,7 +158,7 @@ def train(args):
                                return_tensors="pt",
                                padding=True,
                                truncation=True,
-                               offsets_mapping=True)
+                               return_offsets_mapping=True)
             input_ids = torch.LongTensor(tokens["input_ids"])
             token_type_ids = torch.LongTensor(tokens["token_type_ids"])
             attention_mask = torch.LongTensor(tokens["attention_mask"])
@@ -171,27 +170,20 @@ def train(args):
 
             # pad the answer_start into correct index, get end_pos, the check if
             # they are in scoop, set answer to [CLS] if exceed scoop
-            offsets = pad_answers(token_type_ids)
-            for start, offset in zip(answers, offsets):
-                # answer is dict(answer_text, text)
-                start += offset
+            answer_spans = pad_answers(token_type_ids, answers, input_ids,
+                                       offset_mappings)
 
-            answer_text = answers[0]["text"]
-            end_pos = start_pos + len(answer_text)
-
-            if args.squad_v2:  # True if SQuAD v2
-                is_impossible = batch["is_impossible"]
-            # TODO: deal with questions impossible to answer after finish
-            #  squad v1.1, due to the `is_impossible` flag, we don't need to
-            #  check start and end if they are in span
+            # here we don't need to deal with multi-answers, that's for
+            # validation data (process)
 
             optimizer.zero_grad()
             start_logit, end_logit = model(input_ids, attention_mask)
-            # TODO: start logits and end logits need to calculate separately
-            start_loss = F.cross_entropy(start_logit, start_pos,
+            # start logits and end logits need to calculate separately
+            start_loss = F.cross_entropy(start_logit, answer_spans[:, 0, 0],
                                          reduction='sum') / args.batch_size
-            end_loss = F.cross_entropy(end_logit, end_pos,
+            end_loss = F.cross_entropy(end_logit, answer_spans[:, 0, 1],
                                        reduction='sum') / args.batch_size
+            loss = start_loss + end_loss
 
             loss.backward()
             optimizer.step()
@@ -199,7 +191,7 @@ def train(args):
             train_loss += loss.item()
             num_batches += 1
 
-        train_loss = train_loss / (num_batches)
+        train_loss = train_loss / num_batches
 
         # TODO: complete model_eval function
         # train_em, train_f1, *_ = model_eval(train_dataloader, model, device)
@@ -209,12 +201,35 @@ def train(args):
         #     best_dev_em = dev_em
         #     save_model(model, optimizer, args, config, args.filepath)
         #
-        # print(
-        #     f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_em :.3f}, dev acc :: {dev_em :.3f}")
+        print(f"Epoch {epoch}: train loss :: {train_loss :.3f}")
+        #      f", train acc :: {train_em :.3f}, dev acc :: {dev_em :.3f}")
+
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--use_gpu", action="store_true")
+    parser.add_argument("--train", type=str,
+                        default="data/train-v1.1.json")
+    parser.add_argument("--dev", type=str,
+                        default="data/dev-v1.1.json")
+    parser.add_argument("--batch_size", type=int,
+                        default=8)
+    parser.add_argument("--seed", type=int, default=11711)
+    parser.add_argument("--epochs", type=int, default=8)
+    parser.add_argument("--option", type=str, default="pretrain",
+                        choices=["pretrain", "finetune"])
+    parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--hidden_dropout_prob", type=float,
+                        default=0.1)
+    args = parser.parse_args()
+
+    return args
 
 
 def main():
-    raise NotImplementedError
+    args = get_args()
+    seed_everything(args.seed)
+    train(args)
 
 
 if __name__ == "__main__":

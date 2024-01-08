@@ -344,20 +344,17 @@ class SQuADDataset(Dataset):
         for d in data:
             answer_start = []
             text = []
-            no_answer = False
+            if len(d["answers"]) == 0:
+                continue
             for answer in d["answers"]:
-                if len(answer) == 0:
-                    no_answer = True
-                    break
                 answer_start.append(answer["answer_start"])
                 text.append(answer["text"])
-            if not no_answer:
-                d["answers"] = {"answer_start": answer_start, "text": text}
+            d["answers"] = {"answer_start": answer_start, "text": text}
 
         return data
 
     def collate_fn(self, data):
-        # data = self.pad_answer(data)
+        data = self.pad_answer(data)
         question = [d["question"] for d in data]
         context = [d["context"] for d in data]
         id = [d["id"] for d in data]
