@@ -144,6 +144,7 @@ def train(args):
     best_dev_em = 0
 
     model.train()
+    # TODO: move all tensors to `device`
     for epoch in range(args.epochs):
         train_loss = 0
         num_batches = 0
@@ -164,6 +165,11 @@ def train(args):
             attention_mask = torch.LongTensor(tokens["attention_mask"])
             offset_mappings = torch.LongTensor(tokens["offset_mapping"])
 
+            input_ids = input_ids.to(device)
+            token_type_ids = token_type_ids.to(device)
+            attention_mask = attention_mask.to(device)
+            offset_mappings = offset_mappings.to(device)
+
             # As the way Bert deals with a pair of sequences:
             # "[CLS] question [SEP] context [SEP]", `answer_start` from original
             # data we can't directly use, we should add offset of question
@@ -172,6 +178,7 @@ def train(args):
             # they are in scoop, set answer to [CLS] if exceed scoop
             answer_spans = pad_answers(token_type_ids, answers, input_ids,
                                        offset_mappings)
+            answer_spans = answer_spans.to(device)
 
             # here we don't need to deal with multi-answers, that's for
             # validation data (process)
