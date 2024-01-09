@@ -111,6 +111,85 @@ def pad_answers(token_type_ids, answer_batch, input_ids, offset_mappings):
     return torch.LongTensor(answer_spans)
 
 
+def model_eval(dataloader, model, device):
+    model.eval()
+    answer_true = []
+    answer_pred = []
+    exact_match = 0
+    total = 0
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    for batch in tqdm(dataloader, desc=f"eval", disable=TQDM_DISABLE):
+        question, context, answers = (batch["question"], batch["context"],
+                                      batch["answers"])
+
+        tokens = tokenizer([[q, c] for q, c in zip(question, context)],
+                           return_tensors="pt",
+                           padding=True,
+                           truncation=True,
+                           return_offsets_mapping=True)
+        input_ids = torch.LongTensor(tokens["input_ids"])
+        attention_mask = torch.LongTensor(tokens["attention_mask"])
+
+        input_ids = input_ids.to(device)
+        attention_mask = attention_mask.to(device)
+
+        start_logit, end_logit = model(input_ids, attention_mask)
+        # [batch_size, seq_len]
+        start_logit = start_logit.sequeeze()
+        end_logit = end_logit.sequeeze()
+        start_logit.detach().cpu().numpy()
+        end_logit.detach().cpu().numpy()
+        start_pos = np.argmax(start_logit, axis=-1).flatten()
+        end_pos = np.argmax(end_logit, axis=-1).flatten()
+        for start, end, con, answer in zip(start_pos, end_pos, context,
+                                           answers):
+            answer_p = con[start: end + 1] if start <= end else "[CLS]"
+            exact_match += (answer_p in answer["text"])
+            answer_true.append(answer["text"])
+            answer_pred.append(answer_p)
+            total += 1
+
+    exact_match = float(exact_match) / total
+
+    return exact_match
+
+
+def model_test_eval(dataloader, model, device):
+    model.eval()
+    answer_true = []
+    answer_pred = []
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    for batch in tqdm(dataloader, desc=f"eval", disable=TQDM_DISABLE):
+        question, context, answers = (batch["question"], batch["context"],
+                                      batch["answers"])
+
+        tokens = tokenizer([[q, c] for q, c in zip(question, context)],
+                           return_tensors="pt",
+                           padding=True,
+                           truncation=True, )
+        input_ids = torch.LongTensor(tokens["input_ids"])
+        attention_mask = torch.LongTensor(tokens["attention_mask"])
+
+        input_ids = input_ids.to(device)
+        attention_mask = attention_mask.to(device)
+
+        start_logit, end_logit = model(input_ids, attention_mask)
+        # [batch_size, seq_len]
+        start_logit = start_logit.sequeeze()
+        end_logit = end_logit.sequeeze()
+        start_logit.detach().cpu().numpy()
+        end_logit.detach().cpu().numpy()
+        start_pos = np.argmax(start_logit, axis=-1).flatten()
+        end_pos = np.argmax(end_logit, axis=-1).flatten()
+        for start, end, con, answer in zip(start_pos, end_pos, context,
+                                           answers):
+            answer_p = con[start: end + 1] if start <= end else "[CLS]"
+            answer_true.append(answer["text"])
+            answer_pred.append(answer_p)
+
+    return answer_pred, answer_true
+
+
 def train(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
 
@@ -144,7 +223,6 @@ def train(args):
     best_dev_em = 0
 
     model.train()
-    # TODO: move all tensors to `device`
     for epoch in range(args.epochs):
         train_loss = 0
         num_batches = 0
@@ -199,6 +277,14 @@ def train(args):
             num_batches += 1
 
         train_loss = train_loss / num_batches
+
+        ############################# test #############################
+
+        dev_pred, dev_true = model_test_eval(dev_loader, model, device)
+        for p, t, in zip(dev_pred, dev_true):
+            print(f"pred: {p}, true: {t}")
+
+        ################################################################
 
         # TODO: complete model_eval function
         # train_em, train_f1, *_ = model_eval(train_dataloader, model, device)

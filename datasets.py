@@ -341,6 +341,7 @@ class SQuADDataset(Dataset):
         Turn the format: list(dict(answer_start, text))
         to: dict(list(answer_start), list(text)), it's convenient
         """
+        answers = []
         for d in data:
             answer_start = []
             text = []
@@ -349,17 +350,16 @@ class SQuADDataset(Dataset):
             for answer in d["answers"]:
                 answer_start.append(answer["answer_start"])
                 text.append(answer["text"])
-            d["answers"] = {"answer_start": answer_start, "text": text}
+            answers.append({"answer_start": answer_start, "text": text})
 
-        return data
+        return answers
 
     def collate_fn(self, data):
-        data = self.pad_answer(data)
+        answers = self.pad_answer(data)
         question = [d["question"] for d in data]
         context = [d["context"] for d in data]
         id = [d["id"] for d in data]
         title = [d["title"] for d in data]
-        answers = [d["answers"] for d in data]
 
         return_data = {
             "id": id,
