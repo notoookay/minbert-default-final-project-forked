@@ -112,56 +112,20 @@ def pad_answers(token_type_ids, answer_batch, input_ids, offset_mappings):
     return torch.LongTensor(answer_spans)
 
 
-def model_eval(dataloader, model, device):
+def model_eval(dataloader, model, device):  # model should be already in device
     model.eval()
     answer_true = []
     answer_pred = []
+    ids = []
+    questions = []
+    contexts = []
+    titles = []
     exact_match = 0
     total = 0
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
     for batch in tqdm(dataloader, desc=f"eval", disable=TQDM_DISABLE):
-        question, context, answers = (batch["question"], batch["context"],
-                                      batch["answers"])
-
-        tokens = tokenizer([[q, c] for q, c in zip(question, context)],
-                           return_tensors="pt",
-                           padding=True,
-                           truncation=True)
-        input_ids = torch.LongTensor(tokens["input_ids"])
-        attention_mask = torch.LongTensor(tokens["attention_mask"])
-
-        input_ids = input_ids.to(device)
-        attention_mask = attention_mask.to(device)
-
-        start_logit, end_logit = model(input_ids, attention_mask)
-        # [batch_size, seq_len]
-        start_logit = start_logit.sequeeze()
-        end_logit = end_logit.sequeeze()
-        start_logit = start_logit.detach().cpu().numpy()
-        end_logit = end_logit.detach().cpu().numpy()
-        start_pos = np.argmax(start_logit, axis=-1).flatten()
-        end_pos = np.argmax(end_logit, axis=-1).flatten()
-        for start, end, con, answer in zip(start_pos, end_pos, context,
-                                           answers):
-            answer_p = con[start: end + 1] if start <= end else "[CLS]"
-            exact_match += (answer_p in answer["text"])
-            answer_true.append(answer["text"])
-            answer_pred.append(answer_p)
-            total += 1
-
-    exact_match = float(exact_match) / total
-
-    return exact_match
-
-
-def model_test_eval(dataloader, model, device):
-    model.eval()
-    answer_true = []
-    answer_pred = []
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    for batch in tqdm(dataloader, desc=f"eval", disable=TQDM_DISABLE):
-        question, context, answers = (batch["question"], batch["context"],
-                                      batch["answers"])
+        question, context, answers, title, id =\
+            (batch["question"], batch["context"], batch["answers"], batch["title"], batch["id"])
 
         tokens = tokenizer([[q, c] for q, c in zip(question, context)],
                            return_tensors="pt",
@@ -181,14 +145,71 @@ def model_test_eval(dataloader, model, device):
         end_logit = end_logit.detach().cpu().numpy()
         start_pos = np.argmax(start_logit, axis=-1).flatten()
         end_pos = np.argmax(end_logit, axis=-1).flatten()
-        for start, end, con, answer in zip(start_pos, end_pos, context,
-                                           answers):
+        for start, end, con, answer, i, t, q in zip(start_pos, end_pos, context,
+                                           answers, id, title, question):
+            answer_p = con[start: end + 1] if start <= end else "[CLS]"
+            exact_match += (answer_p in answer["text"])
+            answer_true.append(answer["text"])
+            answer_pred.append(answer_p)
+            ids.append(i)
+            contexts.append(con)
+            titles.append(t)
+            questions.append(q)
+            total += 1
+
+    exact_match = float(exact_match) / total
+
+    return exact_match, answer_pred, answer_true, ids, contexts, titles, questions
+
+
+def model_test_eval(dataloader, model, device):  # model should already be in device
+    """
+    This function is used for testing model on test data, but there is no test
+    released, it will not be used. You can use this to test model and get prediction.
+    """
+    model.eval()
+    answer_true = []
+    answer_pred = []
+    ids = []
+    questions = []
+    contexts = []
+    titles = []
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    for batch in tqdm(dataloader, desc=f"eval", disable=TQDM_DISABLE):
+        question, context, answers, title, id = \
+            (batch["question"], batch["context"], batch["answers"],
+             batch["title"], batch["id"])
+
+        tokens = tokenizer([[q, c] for q, c in zip(question, context)],
+                           return_tensors="pt",
+                           padding=True,
+                           truncation=True)
+        input_ids = torch.LongTensor(tokens["input_ids"])
+        attention_mask = torch.LongTensor(tokens["attention_mask"])
+
+        input_ids = input_ids.to(device)
+        attention_mask = attention_mask.to(device)
+
+        start_logit, end_logit = model(input_ids, attention_mask)
+        # [batch_size, seq_len]
+        start_logit = start_logit.squeeze()
+        end_logit = end_logit.squeeze()
+        start_logit = start_logit.detach().cpu().numpy()
+        end_logit = end_logit.detach().cpu().numpy()
+        start_pos = np.argmax(start_logit, axis=-1).flatten()
+        end_pos = np.argmax(end_logit, axis=-1).flatten()
+        for start, end, con, answer, i, t, q in zip(start_pos, end_pos, context,
+                                                    answers, id, title,
+                                                    question):
             answer_p = con[start: end + 1] if start <= end else "[CLS]"
             answer_true.append(answer["text"])
             answer_pred.append(answer_p)
-        break
+            ids.append(i)
+            contexts.append(con)
+            titles.append(t)
+            questions.append(q)
 
-    return answer_pred, answer_true
+    return answer_pred, answer_true, ids, contexts, titles, questions
 
 
 def train(args):
@@ -223,7 +244,7 @@ def train(args):
     # best_dev_f1 = 0
     best_dev_em = 0
 
-    writer = SummaryWriter()
+    writer = SummaryWriter()  # using tensorboard to log
     model.train()
     for epoch in range(args.epochs):
         train_loss = 0
@@ -280,8 +301,8 @@ def train(args):
 
         train_loss = train_loss / num_batches
 
-        dev_em = model_eval(dev_loader, model, device)
-        train_em = model_eval(train_loader, model, device)
+        dev_em, *_ = model_eval(dev_loader, model, device)
+        train_em, *_ = model_eval(train_loader, model, device)
 
         writer.add_scalar("Loss/train", train_loss, num_batches)
         writer.add_scalar("EM/train", train_em, num_batches)
@@ -295,6 +316,37 @@ def train(args):
               f"train acc :: {train_em :.3f}, dev acc :: {dev_em :.3f}")
 
     writer.close()
+
+
+def test(args):
+    with torch.no_grad():
+        device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
+        saved = torch.load(args.filepath)
+        config = saved["model_config"]
+        model = BertForQuestionAnswering(config)
+        model.load_state_dict(saved["model"])
+        model = model.to(device)
+        print(f"load model from {args.filepath}")
+
+        # SQuAD didn't release the test data, use dev data to test here
+        dev_data = load_squad(args.dev)
+        dev_dataset = SQuADDataset(dev_data)
+        dev_dataloader = DataLoader(dev_dataset, batch_size=args.batch_size,
+                                    collate_fn=dev_dataset.collate_fn)
+        dev_em, answer_pred, answer_true, ids, contexts, titles, questions = \
+            model_eval(dev_dataloader, model, device)
+        print("DONE DEV")
+
+        with open(args.dev_out, "w+") as f:
+            print(f"dev em: {dev_em :.3f}")
+            f.write(f"EM: {dev_em}\n")
+            f.write(f"id \t title \t question \t context \t predicted_answer "
+                    f"\t answer_true\n")
+            for id, title, question, context, answer_p, answer_t in \
+                zip(ids, titles, contexts, answer_pred, answer_true):
+                f.write(f"{id} \t {title} \t {question} \t {context} \t"
+                        f" {answer_p} \t {answer_t}")
+            print("Already wrote to file.")
 
 
 def get_args():
@@ -313,6 +365,7 @@ def get_args():
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--hidden_dropout_prob", type=float,
                         default=0.1)
+    parser.add_argument("--filepath", type=str, default="squad-qa.pt")
     args = parser.parse_args()
 
     return args
@@ -321,7 +374,23 @@ def get_args():
 def main():
     args = get_args()
     seed_everything(args.seed)
-    train(args)
+    print("Training Question Answering on SQuAD")
+    config = SimpleNamespace(
+        filepath="squad-qa.pt",
+        lr=args.lr,
+        use_gpu=args.use_gpu,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        hidden_dropout_prob=args.hidden_dropout_prob,
+        option=args.option,
+        train=args.train,
+        dev=args.dev,
+        dev_out="predictions/" + args.option + "-squad-dev-out.csv"
+    )
+    train(config)
+
+    print("Evaluating on SQuAD")
+    test(config)
 
 
 if __name__ == "__main__":
