@@ -246,6 +246,7 @@ def train(args):
 
     writer = SummaryWriter()  # using tensorboard to log
     model.train()
+    n_iter = 0  # iteration times
     for epoch in range(args.epochs):
         train_loss = 0
         num_batches = 0
@@ -298,15 +299,16 @@ def train(args):
 
             train_loss += loss.item()
             num_batches += 1
+            n_iter += 1
+            writer.add_scalar("Loss/train", loss, n_iter)
 
         train_loss = train_loss / num_batches
 
         dev_em, *_ = model_eval(dev_loader, model, device)
         train_em, *_ = model_eval(train_loader, model, device)
 
-        writer.add_scalar("Loss/train", train_loss, num_batches)
-        writer.add_scalar("EM/train", train_em, num_batches)
-        writer.add_scalar("EM/develop", dev_em, num_batches)
+        writer.add_scalar("EM/train", train_em, epoch)
+        writer.add_scalar("EM/develop", dev_em, epoch)
 
         if dev_em > best_dev_em:
             best_dev_em = dev_em
