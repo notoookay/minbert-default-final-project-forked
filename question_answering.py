@@ -12,6 +12,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from torch.nn import functional as F
+from torch.utils.tensorboard import SummaryWriter
 
 from bert import BertModel
 from multitask_classifier import save_model
@@ -125,8 +126,7 @@ def model_eval(dataloader, model, device):
         tokens = tokenizer([[q, c] for q, c in zip(question, context)],
                            return_tensors="pt",
                            padding=True,
-                           truncation=True,
-                           return_offsets_mapping=True)
+                           truncation=True)
         input_ids = torch.LongTensor(tokens["input_ids"])
         attention_mask = torch.LongTensor(tokens["attention_mask"])
 
@@ -137,8 +137,8 @@ def model_eval(dataloader, model, device):
         # [batch_size, seq_len]
         start_logit = start_logit.sequeeze()
         end_logit = end_logit.sequeeze()
-        start_logit.detach().cpu().numpy()
-        end_logit.detach().cpu().numpy()
+        start_logit = start_logit.detach().cpu().numpy()
+        end_logit = end_logit.detach().cpu().numpy()
         start_pos = np.argmax(start_logit, axis=-1).flatten()
         end_pos = np.argmax(end_logit, axis=-1).flatten()
         for start, end, con, answer in zip(start_pos, end_pos, context,
@@ -166,7 +166,7 @@ def model_test_eval(dataloader, model, device):
         tokens = tokenizer([[q, c] for q, c in zip(question, context)],
                            return_tensors="pt",
                            padding=True,
-                           truncation=True, )
+                           truncation=True)
         input_ids = torch.LongTensor(tokens["input_ids"])
         attention_mask = torch.LongTensor(tokens["attention_mask"])
 
@@ -175,10 +175,10 @@ def model_test_eval(dataloader, model, device):
 
         start_logit, end_logit = model(input_ids, attention_mask)
         # [batch_size, seq_len]
-        start_logit = start_logit.sequeeze()
-        end_logit = end_logit.sequeeze()
-        start_logit.detach().cpu().numpy()
-        end_logit.detach().cpu().numpy()
+        start_logit = start_logit.squeeze()
+        end_logit = end_logit.squeeze()
+        start_logit = start_logit.detach().cpu().numpy()
+        end_logit = end_logit.detach().cpu().numpy()
         start_pos = np.argmax(start_logit, axis=-1).flatten()
         end_pos = np.argmax(end_logit, axis=-1).flatten()
         for start, end, con, answer in zip(start_pos, end_pos, context,
@@ -186,6 +186,7 @@ def model_test_eval(dataloader, model, device):
             answer_p = con[start: end + 1] if start <= end else "[CLS]"
             answer_true.append(answer["text"])
             answer_pred.append(answer_p)
+        break
 
     return answer_pred, answer_true
 
@@ -222,6 +223,7 @@ def train(args):
     # best_dev_f1 = 0
     best_dev_em = 0
 
+    writer = SummaryWriter()
     model.train()
     for epoch in range(args.epochs):
         train_loss = 0
@@ -278,24 +280,21 @@ def train(args):
 
         train_loss = train_loss / num_batches
 
-        ############################# test #############################
+        dev_em = model_eval(dev_loader, model, device)
+        train_em = model_eval(train_loader, model, device)
 
-        dev_pred, dev_true = model_test_eval(dev_loader, model, device)
-        for p, t, in zip(dev_pred, dev_true):
-            print(f"pred: {p}, true: {t}")
+        writer.add_scalar("Loss/train", train_loss, num_batches)
+        writer.add_scalar("EM/train", train_em, num_batches)
+        writer.add_scalar("EM/develop", dev_em, num_batches)
 
-        ################################################################
+        if dev_em > best_dev_em:
+            best_dev_em = dev_em
+            save_model(model, optimizer, args, config, args.filepath)
 
-        # TODO: complete model_eval function
-        # train_em, train_f1, *_ = model_eval(train_dataloader, model, device)
-        # dev_em, dev_f1, *_ = model_eval(dev_dataloader, model, device)
+        print(f"Epoch {epoch}: train loss :: {train_loss :.3f},"
+              f"train acc :: {train_em :.3f}, dev acc :: {dev_em :.3f}")
 
-        # if dev_em > best_dev_em:
-        #     best_dev_em = dev_em
-        #     save_model(model, optimizer, args, config, args.filepath)
-        #
-        print(f"Epoch {epoch}: train loss :: {train_loss :.3f}")
-        #      f", train acc :: {train_em :.3f}, dev acc :: {dev_em :.3f}")
+    writer.close()
 
 
 def get_args():
