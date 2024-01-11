@@ -23,7 +23,7 @@ from transformers import AutoTokenizer
 # here I use transformers tokenizer for `offset_mapping` feature
 
 TQDM_DISABLE = False
-
+MAX_LENGTH = 512
 
 # For reproducible
 def seed_everything(seed=11711):
@@ -84,9 +84,11 @@ def pad_answers(token_type_ids, answer_batch, input_ids, offset_mappings):
         context_end = l - 1
         while context_start < l and token_type_id[context_start] == 0:
             context_start += 1
+        context_start += 1  # pass [CLS]
         while context_end >= 0 and token_type_id[context_end] == 0:
             # after padding, 0 may appear at the end of token_type_id
             context_end -= 1
+        context_end -= 1  # pass [SEP]
 
         answer_span = []
         for start_pos, text in zip(answers["answer_start"], answers["text"]):
@@ -103,8 +105,8 @@ def pad_answers(token_type_ids, answer_batch, input_ids, offset_mappings):
                 token_start -= 1
                 while token_end >= context_start and \
                         offset_mapping[token_end][1] >= end_pos:
-                    token_start -= 1
-                token_start += 1
+                    token_end -= 1
+                token_end += 1
                 answer_span.append([token_start, token_end])
         answer_spans.append(answer_span)
 
@@ -129,8 +131,10 @@ def model_eval(dataloader, model, device):  # model should be already in device
 
         tokens = tokenizer([[q, c] for q, c in zip(question, context)],
                            return_tensors="pt",
-                           padding=True,
-                           truncation=True)
+                           max_length=MAX_LENGTH,
+                           padding="max_length",
+                           truncation="only_second")
+
         input_ids = torch.LongTensor(tokens["input_ids"])
         attention_mask = torch.LongTensor(tokens["attention_mask"])
 
@@ -182,8 +186,9 @@ def model_test_eval(dataloader, model, device):  # model should already be in de
 
         tokens = tokenizer([[q, c] for q, c in zip(question, context)],
                            return_tensors="pt",
-                           padding=True,
-                           truncation=True)
+                           padding="max_length",
+                           truncation="only_second",
+                           max_length=MAX_LENGTH)
         input_ids = torch.LongTensor(tokens["input_ids"])
         attention_mask = torch.LongTensor(tokens["attention_mask"])
 
@@ -259,8 +264,9 @@ def train(args):
 
             tokens = tokenizer([[q, c] for q, c in zip(question, context)],
                                return_tensors="pt",
-                               padding=True,
-                               truncation=True,
+                               padding="max_length",
+                               truncation="only_second",
+                               max_length=MAX_LENGTH,
                                return_offsets_mapping=True)
             input_ids = torch.LongTensor(tokens["input_ids"])
             token_type_ids = torch.LongTensor(tokens["token_type_ids"])
@@ -361,10 +367,10 @@ def get_args():
     parser.add_argument("--batch_size", type=int,
                         default=8)
     parser.add_argument("--seed", type=int, default=11711)
-    parser.add_argument("--epochs", type=int, default=8)
+    parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--option", type=str, default="pretrain",
                         choices=["pretrain", "finetune"])
-    parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--hidden_dropout_prob", type=float,
                         default=0.1)
     parser.add_argument("--filepath", type=str, default="squad-qa.pt")
