@@ -25,6 +25,7 @@ from transformers import AutoTokenizer
 TQDM_DISABLE = False
 MAX_LENGTH = 512
 
+
 # For reproducible
 def seed_everything(seed=11711):
     random.seed(seed)
@@ -57,13 +58,12 @@ class BertForQuestionAnswering(nn.Module):
         self.pos_proj = nn.Linear(config.hidden_size, config.num_label)
         # Do NOT use `softmax` here, because we will use CrossEntropy
 
-
     def forward(self, input_ids, attention_mask):
         """ This is not multitask, write forward directly """
         outputs = self.bert(input_ids, attention_mask)
         # Do not need pooler output ([CLS])
         hidden_state = outputs["last_hidden_state"]
-        logits = self.pos_proj(self.dropout(hidden_state)) # (batch_size, seq_len, num_label)
+        logits = self.pos_proj(self.dropout(hidden_state))  # (batch_size, seq_len, num_label)
 
         return logits[:, :, 0], logits[:, :, 1]
 
@@ -125,20 +125,24 @@ def model_eval(dataloader, model, device):  # model should be already in device
     total = 0
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
     for batch in tqdm(dataloader, desc=f"eval", disable=TQDM_DISABLE):
-        question, context, answers, title, id =\
-            (batch["question"], batch["context"], batch["answers"], batch["title"], batch["id"])
+        question, context, answers, title, id = \
+            (batch["question"], batch["context"], batch["answers"],
+             batch["title"], batch["id"])
 
         tokens = tokenizer([[q, c] for q, c in zip(question, context)],
                            return_tensors="pt",
                            max_length=MAX_LENGTH,
                            padding="max_length",
-                           truncation="only_second")
+                           truncation="only_second",
+                           return_offsets_mapping=True)
 
         input_ids = torch.LongTensor(tokens["input_ids"])
         attention_mask = torch.LongTensor(tokens["attention_mask"])
+        offset_mappings = torch.LongTensor(tokens["offset_mapping"])
 
         input_ids = input_ids.to(device)
         attention_mask = attention_mask.to(device)
+        offset_mappings = offset_mappings.to(device)
 
         start_logit, end_logit = model(input_ids, attention_mask)
         # [batch_size, seq_len]
@@ -148,9 +152,14 @@ def model_eval(dataloader, model, device):  # model should be already in device
         end_logit = end_logit.detach().cpu().numpy()
         start_pos = np.argmax(start_logit, axis=-1).flatten()
         end_pos = np.argmax(end_logit, axis=-1).flatten()
-        for start, end, con, answer, i, t, q in zip(start_pos, end_pos, context,
-                                           answers, id, title, question):
-            answer_p = con[start: end + 1] if start <= end else "[CLS]"
+        # start_pos and end_pos should be pos after tokenization,
+        # it shouldn't be directly compared with true start and end pos
+        for (start, end, con, offset_mapping,
+             answer, i, t, q) in zip(start_pos, end_pos, context,
+                                     offset_mappings, answers,
+                                     id, title, question):
+            answer_p = con[offset_mapping[start][0]: offset_mapping[end][1] + 1]\
+                if start <= end else "[CLS]"
             exact_match += (answer_p in answer["text"])
             answer_true.append(answer["text"])
             answer_pred.append(answer_p)
@@ -187,12 +196,15 @@ def model_test_eval(dataloader, model, device):  # model should already be in de
                            return_tensors="pt",
                            padding="max_length",
                            truncation="only_second",
-                           max_length=MAX_LENGTH)
+                           max_length=MAX_LENGTH,
+                           return_offsets_mapping=True)
         input_ids = torch.LongTensor(tokens["input_ids"])
         attention_mask = torch.LongTensor(tokens["attention_mask"])
+        offset_mappings = torch.LongTensor(tokens["offset_mapping"])
 
         input_ids = input_ids.to(device)
         attention_mask = attention_mask.to(device)
+        offset_mappings = offset_mappings.to(device)
 
         start_logit, end_logit = model(input_ids, attention_mask)
         # [batch_size, seq_len]
@@ -202,10 +214,12 @@ def model_test_eval(dataloader, model, device):  # model should already be in de
         end_logit = end_logit.detach().cpu().numpy()
         start_pos = np.argmax(start_logit, axis=-1).flatten()
         end_pos = np.argmax(end_logit, axis=-1).flatten()
-        for start, end, con, answer, i, t, q in zip(start_pos, end_pos, context,
-                                                    answers, id, title,
-                                                    question):
-            answer_p = con[start: end + 1] if start <= end else "[CLS]"
+        for (start, end, con, offset_mapping,
+             answer, i, t, q) in zip(start_pos, end_pos, context,
+                                     offset_mappings, answers,
+                                     id, title, question):
+            answer_p = con[offset_mapping[start][0]: offset_mapping[end][1] + 1]\
+                if start <= end else "[CLS]"
             answer_true.append(answer["text"])
             answer_pred.append(answer_p)
             ids.append(i)
@@ -350,7 +364,7 @@ def test(args):
             f.write(f"id \t title \t question \t context \t predicted_answer "
                     f"\t answer_true\n")
             for id, title, question, context, answer_p, answer_t in \
-                zip(ids, titles, contexts, answer_pred, answer_true):
+                    zip(ids, titles, contexts, answer_pred, answer_true):
                 f.write(f"{id} \t {title} \t {question} \t {context} \t"
                         f" {answer_p} \t {answer_t}")
             print("Already wrote to file.")
