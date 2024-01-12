@@ -55,16 +55,15 @@ class BertForQuestionAnswering(nn.Module):
         # project hidden_state to (start_pos, end_pos),
         # `num_label` should be 2 in QA
         self.pos_proj = nn.Linear(config.hidden_size, config.num_label)
-        # get logits
-        self.softmax = nn.Softmax(dim=-2)
+        # Do NOT use `softmax` here, because we will use CrossEntropy
+
 
     def forward(self, input_ids, attention_mask):
         """ This is not multitask, write forward directly """
         outputs = self.bert(input_ids, attention_mask)
         # Do not need pooler output ([CLS])
         hidden_state = outputs["last_hidden_state"]
-        hidden_state = self.pos_proj(self.dropout(hidden_state))
-        logits = self.softmax(hidden_state)  # (batch_size, seq_len, num_label)
+        logits = self.pos_proj(self.dropout(hidden_state)) # (batch_size, seq_len, num_label)
 
         return logits[:, :, 0], logits[:, :, 1]
 
@@ -295,9 +294,9 @@ def train(args):
             start_logit, end_logit = model(input_ids, attention_mask)
             # start logits and end logits need to calculate separately
             start_loss = F.cross_entropy(start_logit, answer_spans[:, 0, 0],
-                                         reduction='sum') / args.batch_size
+                                         reduction='mean')
             end_loss = F.cross_entropy(end_logit, answer_spans[:, 0, 1],
-                                       reduction='sum') / args.batch_size
+                                       reduction='mean')
             loss = start_loss + end_loss
 
             loss.backward()
@@ -321,7 +320,7 @@ def train(args):
             save_model(model, optimizer, args, config, args.filepath)
 
         print(f"Epoch {epoch}: train loss :: {train_loss :.3f},"
-              f"train acc :: {train_em :.3f}, dev acc :: {dev_em :.3f}")
+              f"train EM :: {train_em :.3f}, dev EM :: {dev_em :.3f}")
 
     writer.close()
 

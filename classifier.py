@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
+from torch.utils.tensorboard import SummaryWriter
 
 # change it with respect to the original model
 from tokenizer import BertTokenizer
@@ -266,6 +267,8 @@ def train(args):
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
+    writer = SummaryWriter()
+    n_iter = 0
 
     # Run for the specified number of epochs
     for epoch in range(args.epochs):
@@ -286,6 +289,8 @@ def train(args):
 
             loss.backward()
             optimizer.step()
+            writer.add_scalar("Loss/train", loss, n_iter)
+            n_iter += 1
 
             train_loss += loss.item()
             num_batches += 1
@@ -295,11 +300,15 @@ def train(args):
         train_acc, train_f1, *_  = model_eval(train_dataloader, model, device)
         dev_acc, dev_f1, *_ = model_eval(dev_dataloader, model, device)
 
+        writer.add_scalar("Acc/train", train_acc, epoch)
+        writer.add_scalar("Acc/dev", dev_acc, epoch)
+
         if dev_acc > best_dev_acc:
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
 
         print(f"Epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
+    writer.close()
 
 
 def test(args):
