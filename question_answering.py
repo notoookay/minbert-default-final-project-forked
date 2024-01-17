@@ -44,7 +44,7 @@ class BertForQuestionAnswering(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.bert = BertModel.from_pretrained("bert-base-uncased")
+        self.bert = BertModel.from_pretrained("bert-base-cased")
         for param in self.bert.parameters():
             if config.option == "pretrain":
                 param.requires_grad = False
@@ -123,7 +123,7 @@ def model_eval(dataloader, model, device):  # model should be already in device
     titles = []
     exact_match = 0
     total = 0
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
     for batch in tqdm(dataloader, desc=f"eval", disable=TQDM_DISABLE):
         question, context, answers, title, id = \
             (batch["question"], batch["context"], batch["answers"],
@@ -186,7 +186,7 @@ def model_test_eval(dataloader, model, device):  # model should already be in de
     questions = []
     contexts = []
     titles = []
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
     for batch in tqdm(dataloader, desc=f"eval", disable=TQDM_DISABLE):
         question, context, answers, title, id = \
             (batch["question"], batch["context"], batch["answers"],
@@ -244,7 +244,7 @@ def train(args):
     dev_loader = DataLoader(dev_dataset, collate_fn=dev_dataset.collate_fn,
                             shuffle=True, batch_size=args.batch_size)
 
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
 
     config = {'hidden_dropout_prob': args.hidden_dropout_prob,
               'hidden_size': 768,
