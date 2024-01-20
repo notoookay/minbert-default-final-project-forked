@@ -15,8 +15,8 @@ def get_train_test_args():
     parser.add_argument('--run-name', type=str, default='qa_bert')
     parser.add_argument('--recompute-features', action='store_true')
     parser.add_argument('--train-dir', type=str,
-                        default='data/')
-    parser.add_argument('--val-dir', type=str, default='data/')
+                        default='data')
+    parser.add_argument('--val-dir', type=str, default='data')
     parser.add_argument('--val-datasets', type=str,
                         default='dev-v1.1.json')
     parser.add_argument('--do-train', action='store_true')

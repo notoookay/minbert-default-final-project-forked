@@ -22,18 +22,18 @@ import qa_utils
 
 
 class QADataset(Dataset):
-    def __init__(self, encoding, train=True):
-        self.encoding = encoding
+    def __init__(self, encodings, train=True):
+        self.encodings = encodings
         self.keys = ["input_ids", "attention_mask"]
         if train:
             self.keys.extend(["start_positions", "end_positions"])
-        assert (all(key in self.encoding for key in self.keys))
+        assert (all(key in self.encodings for key in self.keys))
 
     def __getitem__(self, idx):
-        return {key: torch.tensor(self.encoding[key][idx]) for key in self.keys}
+        return {key: torch.tensor(self.encodings[key][idx]) for key in self.keys}
 
     def __len__(self):
-        return len(self.encoding["input_ids"])
+        return len(self.encodings["input_ids"])
 
 
 class Trainer:
@@ -128,9 +128,9 @@ class Trainer:
                                                           val_dict,
                                                           return_preds=True)
                         results_str = ", ".join(f"{k}: {v:05.2f}"
-                                                for k, v in curr_score.item())
+                                                for k, v in curr_score.items())
                         self.log.info("Visualizing in TensorBoard....")
-                        for k, v in curr_score.item():
+                        for k, v in curr_score.items():
                             tbx.add_scalar(f"val/{k}", v, global_idx)
                         self.log.info(f"Eval {results_str}")
                         if self.visualize_predictions:
@@ -167,7 +167,7 @@ def prepare_train_data(dataset_dict, tokenizer):
     for i, offsets in enumerate(tqdm(offset_mapping)):
         # Label impossible answers with the index of the CLS token
         input_ids = tokenized_examples["input_ids"][i]
-        cls_index = input_ids.index[tokenizer.cls_token.id]
+        cls_index = input_ids.index(tokenizer.cls_token_id)
 
         # Grab the sequence corresponding to that example (to know what is
         #  question and what is question)
@@ -316,7 +316,7 @@ def main():
                                   sampler=RandomSampler(train_dataset))
         val_loader = DataLoader(val_dataset,
                                 batch_size=args.batch_size,
-                                sampler=SequentialSampler(train_dataset))
+                                sampler=SequentialSampler(val_dataset))
         best_scores = trainer.train(model, train_loader, val_loader, val_dict)
 
     if args.do_eval:
