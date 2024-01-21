@@ -1,0 +1,53 @@
+[01.21.24 02:58:26] Args: {
+    "batch_size": 16,
+    "do_eval": false,
+    "do_train": true,
+    "eval": false,
+    "eval_every": 2000,
+    "lr": 3e-05,
+    "num_epochs": 3,
+    "num_visuals": 10,
+    "pred_file": "",
+    "recompute_features": false,
+    "run_name": "qa_bert",
+    "save_dir": "save/qa_bert-00",
+    "seed": 42,
+    "train": false,
+    "train_datasets": "train-v1.1.json",
+    "train_dir": "data",
+    "val_datasets": "dev-v1.1.json",
+    "val_dir": "data",
+    "visualize_predictions": true
+}
+[01.21.24 02:58:26] Preparing Training Data...
+[01.21.24 02:58:51] Preparing Validation Data...
+[01.21.24 02:58:57] Epoch: 0
+[01.21.24 02:58:58] Evaluating at step 0
+[01.21.24 03:01:18] Visualizing in TensorBoard....
+[01.21.24 03:01:18] Eval F1: 08.09, EM: 00.42
+[01.21.24 03:21:29] Evaluating at step 2000
+[01.21.24 03:23:50] Visualizing in TensorBoard....
+[01.21.24 03:23:50] Eval F1: 76.63, EM: 62.35
+[01.21.24 03:44:03] Evaluating at step 4000
+[01.21.24 03:46:23] Visualizing in TensorBoard....
+[01.21.24 03:46:23] Eval F1: 79.51, EM: 65.84
+[01.21.24 04:01:52] Epoch: 1
+[01.21.24 04:06:35] Evaluating at step 6000
+[01.21.24 04:08:56] Visualizing in TensorBoard....
+[01.21.24 04:08:56] Eval F1: 81.01, EM: 67.46
+[01.21.24 04:29:08] Evaluating at step 8000
+[01.21.24 04:31:28] Visualizing in TensorBoard....
+[01.21.24 04:31:28] Eval F1: 79.91, EM: 66.89
+[01.21.24 04:51:38] Evaluating at step 10000
+[01.21.24 04:53:58] Visualizing in TensorBoard....
+[01.21.24 04:53:58] Eval F1: 80.48, EM: 66.94
+[01.21.24 05:04:42] Epoch: 2
+[01.21.24 05:14:07] Evaluating at step 12000
+[01.21.24 05:16:28] Visualizing in TensorBoard....
+[01.21.24 05:16:28] Eval F1: 80.61, EM: 67.23
+[01.21.24 05:36:37] Evaluating at step 14000
+[01.21.24 05:38:58] Visualizing in TensorBoard....
+[01.21.24 05:38:58] Eval F1: 80.39, EM: 66.27
+[01.21.24 05:59:08] Evaluating at step 16000
+[01.21.24 06:01:29] Visualizing in TensorBoard....
+[01.21.24 06:01:29] Eval F1: 80.71, EM: 67.35
