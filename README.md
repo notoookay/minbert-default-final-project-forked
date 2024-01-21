@@ -1,5 +1,32 @@
 # Forked repo which contains some complete code
 
+## Update (January 21st, 2024)
+
+QA with bert-base-uncased has been completed. The dependencies needed are all
+included in the `setup.sh`, using `source setup.sh` to config the environment.
+
+There are two versions of QA, `question_answering.py` follows the same architecture 
+with the original classification tasks (while sharing same config files),
+its **Loss** can decrease while **EM** and **F1** do not. Therefore, another
+version (`question_answering_new.py` & `qa_args.py` & `qa_utils.py`) are created
+to replace the first version which has some errors that didn't be found, you
+should use the second to train and test (I keep the first for the error check).
+The training and validation results have been included in `save/` (but no model
+as it's a large file), it has been trained on **SQuAD v1.1**, you can train it
+on other data if the format is same as **SQuAD**. The more option for training
+and validation can be found in `qa_args.py`. Meanwhile, you can use `tensorboard`
+to check training results (the events file is in `save/qa_bert-00/`):
+```shell
+# First clone the repo
+
+cd minbert-default-final-project/
+tensorboard --logdir save/qa_bert-00/
+```
+
+Notice: I wrote this just for practicing, and I tested it on `debian 10`, if you
+config the env as `setup.sh`, it should work fine. Any constructive or helpful
+ advice and bug fixes are appreciated.
+
 ## Update (January 1st, 2024)
 
 The Basic classifier task model has been completed, but not train or test yet,
